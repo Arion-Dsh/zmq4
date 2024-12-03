@@ -8,12 +8,14 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 )
 
 // NewPush returns a new PUSH ZeroMQ socket.
 // The returned socket value is initially unbound.
 func NewPush(ctx context.Context, opts ...Option) Socket {
 	push := &pushSocket{newSocket(ctx, Push, opts...)}
+	push.sck.w = &pushWriter{ctx: ctx}
 	push.sck.r = nil
 	return push
 }
@@ -75,6 +77,56 @@ func (push *pushSocket) GetOption(name string) (interface{}, error) {
 // SetOption is used to set an option for a socket.
 func (push *pushSocket) SetOption(name string, value interface{}) error {
 	return push.sck.SetOption(name, value)
+}
+
+type pushWriter struct {
+	ctx   context.Context
+	mu    sync.Mutex
+	conns []*Conn
+	index int
+}
+
+func (pw *pushWriter) addConn(w *Conn) {
+	pw.mu.Lock()
+	pw.conns = append(pw.conns, w)
+	pw.mu.Unlock()
+}
+
+func (pw *pushWriter) rmConn(conn *Conn) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	cur := -1
+	for i := range pw.conns {
+		if pw.conns[i] == conn {
+			cur = i
+			break
+		}
+	}
+	if cur >= 0 {
+		pw.conns = append(pw.conns[:cur], pw.conns[cur+1:]...)
+	}
+}
+func (pw *pushWriter) Close() error {
+	pw.mu.Lock()
+	for _, ww := range pw.conns {
+		ww.Close()
+	}
+	pw.conns = nil
+	pw.mu.Unlock()
+	return nil
+}
+
+func (pw *pushWriter) write(ctx context.Context, msg Msg) error {
+	if len(pw.conns) == 0 {
+		return nil
+	}
+	pw.mu.Lock()
+	i := pw.index
+	ww := pw.conns[i]
+	pw.index = (i + 1) % len(pw.conns)
+	pw.mu.Unlock()
+	return ww.SendMsg(msg)
 }
 
 var (

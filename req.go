@@ -97,7 +97,7 @@ type reqWriter struct {
 	state    *reqState
 }
 
-func newReqWriter(ctx context.Context, state *reqState) *reqWriter {
+func newReqWriter(_ context.Context, state *reqState) *reqWriter {
 	return &reqWriter{
 		state: state,
 	}
@@ -165,7 +165,7 @@ type reqReader struct {
 	state *reqState
 }
 
-func newReqReader(ctx context.Context, state *reqState) *reqReader {
+func newReqReader(_ context.Context, state *reqState) *reqReader {
 	return &reqReader{
 		state: state,
 	}
